@@ -7,6 +7,14 @@ SEARCH_QUERIES = [
     '"buy from Japan" Pokemon',
 ]
 
+NEWS_QUERIES = [
+    '"Japan exclusive" Pokemon',
+    '"Pokemon Center Japan" plush',
+    '"Pokemon Japan" limited item',
+    '"Japanese Pokemon" rare plush',
+    '"buy from Japan" Pokemon',
+]
+
 POKEMON_CENTER_URLS = [
     "https://www.pokemoncenter-online.com/plush-toys/",
 ]

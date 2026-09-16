@@ -1,16 +1,21 @@
-# Japan Hunt MVP
+# Japan Hunt v0.5
 
 海外ユーザーの日本商品への購入需要を収集し、日本国内の商品情報と突き合わせてOpportunity Scoreを算出するMVP。
 
-- Reddit検索RSSから需要候補を収集
-- 商品候補を集約
-- Pokémon Center Onlineの商品情報を取得
-- SQLiteへ履歴保存
-- 需要・購入意図・希少性・日本限定性・在庫からスコア化
-- HTML変更時の異常検知で安全停止
-- CSVレポート生成
+## v0.5 changes
 
-まずはX自動投稿をせず、需要検証を優先します。
+- RedditのHTTP 429や一時エラーで全体停止しない
+- Google News RSSを第2の需要ソースとして追加
+- RedditとGoogle Newsを同じ需要クラスタへ集約
+- `spikes` のスコープバグを修正
+- eBay価格取得失敗時の未初期化変数バグを修正
+- 価格取得失敗時もCSV生成を継続
+- GitHub Actionsの `contents: write` 権限を明示
+- X/Redditへの自動投稿はまだ行わない
+
+Google News RSSは検索クエリ単位で取得し、英語圏（US）の検索結果を使います。
+Google News RSSの検索URL形式は一般に `news.google.com/rss/search?q=...` が使われます。
+公式Google Search資料でもRSS/AtomがURL発見に使われる仕組みが説明されています。
 
 ## 実行
 
@@ -20,71 +25,37 @@ python main.py
 ```
 
 生成:
-- data/japan_hunt.db
-- data/opportunities.csv
+- `data/japan_hunt.db`
+- `data/opportunities.csv`
+- `data/demand_history.json`
+- `data/price_cache.json`
 
 ## GitHub Actions
 
 `.github/workflows/daily.yml` が6時間ごとに実行します。
-取得件数が異常な場合は安全停止し、既存DBを壊しません。
+`workflow_dispatch` で手動実行もできます。
 
-HTML構造の変更を完全に防ぐことはできませんが、JSON-LD→複数selector→件数検証という多層構造にしています。
+GitHub Actionsからリポジトリへレポートを書き戻すため、workflow内で
+`permissions: contents: write` を設定しています。
 
+## 価格データについて
 
-## v0.2: 海外価格差
+eBay公開検索ページから表示価格を取得し、1 USD = 150 JPYの暫定換算でPrice Gapを計算します。
+これは成約価格ではなく、検索結果に表示される出品価格の中央値です。
 
-需要が1件以上ある商品について、eBay公開検索ページから表示価格の中央値を取得し、
-1 USD = 150 JPY の暫定換算でPrice Gapを計算します。
+## 安全設計
 
-これは「実際の成約価格」ではなく「検索結果に表示される出品価格の中央値」です。
-したがって、Price Gapだけで購入判断をせず、需要・在庫・購入意図と組み合わせます。
+- Reddit取得失敗 → Newsへ継続
+- News取得失敗 → 商品取得へ継続
+- eBay取得失敗 → 前回キャッシュまたは価格差なしで継続
+- Pokémon Centerの商品取得件数異常 → 安全停止
+- まだ自動投稿しない
 
-次の段階ではeBayの公式API等、より安定した価格データソースへ差し替える設計にします。
+## 次の段階
 
-## 現在の収益導線
-
-ZenMarketには公式アフィリエイト制度があり、新規登録や商品購入に応じた報酬体系を公開しています。
-MVPではまだリンクを自動挿入していません。
-
-
-## v0.3: 価格取得を壊れにくく
-
-- 価格取得を `price_sources.py` に分離
-- 24時間キャッシュ
-- 検索結果が3件未満なら価格差を採用しない
-- 極端な価格外れ値を抑制
-- 価格取得失敗時は前回値を利用
-- 異常な価格差（-99%未満 / +5000%超）は無効化
-- `price_source`, `price_sample`, `price_gap_percent` をCSVへ保存
-
-これにより、海外サイトのHTML変更や一時的な取得失敗でOpportunity Score全体が壊れにくくなります。
-
-### 重要
-eBayの公式Browse APIも存在しますが、APIキー等の運用が必要になるため、
-ゼロ円・GitHub Actions前提のMVPでは公開検索を暫定利用しています。
-将来APIへ交換できるよう価格取得モジュールを分離しています。
-
-
-## v0.4: 需要急増検知
-
-各商品候補について直近30回の需要件数を保存し、
-
-- 前回比
-- 成長率
-- z-score
-- Demand Spike Score
-
-を計算します。
-
-通常のOpportunity Scoreを85%、急増シグナルを15%として最終ランキングを作ります。
-これにより「昔から人気」だけでなく「今急に探され始めた」を上位に持ってきます。
-
-`post_candidates.py` は80点以上・在庫あり等の条件を満たす商品について、
-英語投稿の候補文を最大3件生成します。
-
-まだX/Redditへの自動投稿はしていません。
-まず投稿候補を確認して誤検出を潰す段階です。
-
-GitHub Actionsはscheduleで定期実行でき、workflow_dispatchによる手動実行も可能です。
-GitHub公式ドキュメントではscheduleはUTCが既定で、混雑時に遅延する可能性があるため、
-v0.4では毎時ちょうどを避けた時刻にしています。
+1. 数日間GitHub Actionsを回してデータ蓄積
+2. 誤マッチを確認
+3. Opportunity Scoreを調整
+4. ZenMarketアフィリエイト導線を追加
+5. 投稿候補を人間確認
+6. 十分な精度が出たらSNS自動投稿を検討

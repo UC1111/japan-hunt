@@ -1,8 +1,17 @@
-import hashlib,re,time,requests,feedparser
+import hashlib
+import time
+from urllib.parse import quote_plus
 
-UA="JapanHuntMVP/0.5 (read-only research bot)"
+import feedparser
+import requests
 
-def normalize_product_key(text):
+UA = "JapanHuntMVP/0.5 (read-only research bot)"
+BASE = "https://news.google.com/rss/search"
+
+def _normalize_product_key(text):
+    # Reuse the same normalization logic without importing reddit.py,
+    # so a Reddit outage cannot affect the News source.
+    import re
     text=re.sub(r"https?://\S+"," ",text.lower())
     text=re.sub(r"[^a-z0-9\s-]"," ",text)
     text=re.sub(r"\s+"," ",text).strip()
@@ -11,43 +20,45 @@ def normalize_product_key(text):
           "japanese","pokemon","center","exclusive","proxy"}
     return " ".join(w for w in text.split() if w not in stop)[:160]
 
-def collect_queries(queries,limit_per_query=50):
+def collect_news(queries, limit_per_query=20):
     out=[]
     for q in queries:
         try:
+            params={
+                "q":q,
+                "hl":"en-US",
+                "gl":"US",
+                "ceid":"US:en",
+            }
             r=requests.get(
-                "https://www.reddit.com/search.rss",
-                params={"q":q,"sort":"new","limit":limit_per_query},
-                headers={"User-Agent":UA},timeout=20
+                BASE,
+                params=params,
+                headers={"User-Agent":UA},
+                timeout=20,
             )
-
-            if r.status_code == 429:
-                print(f"Reddit 429 rate limit: {q} -> skip")
-                continue
-
             r.raise_for_status()
             feed=feedparser.parse(r.text)
 
-            for e in feed.entries:
+            for e in feed.entries[:limit_per_query]:
                 title=e.get("title","")
-                summary=re.sub("<[^>]+>"," ",e.get("summary",""))
+                summary=e.get("summary","")
                 raw=f"{title} {summary}"
-                key=normalize_product_key(raw)
+                key=_normalize_product_key(raw)
                 if not key:
                     continue
                 ident=e.get("id",e.get("link",raw))
                 out.append({
-                    "id":hashlib.sha1(("reddit:"+ident).encode()).hexdigest(),
+                    "id":hashlib.sha1(("news:"+ident).encode()).hexdigest(),
                     "title":title,
                     "text":summary,
                     "url":e.get("link",""),
                     "created_utc":time.time(),
                     "query":q,
-                    "product_key":key
+                    "product_key":key,
                 })
         except Exception as e:
-            print(f"Reddit error: {q} -> {e}")
-            print("Skipping this Reddit query.")
+            print(f"Google News error: {q} -> {e}")
+            print("Skipping this News query.")
 
         time.sleep(1)
 
