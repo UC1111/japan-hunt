@@ -107,16 +107,21 @@ def main():
     print("[3/5] Pokémon Center")
     try:
         ps=fetch_all(POKEMON_CENTER_URLS)
+        for p in ps:
+            db.upsert_product(p.__dict__)
+        print("products:",len(ps))
     except Exception as e:
-        print("SAFETY STOP:",e)
-        return
+        print("Pokémon Center unavailable:",e)
+        print("Using previously stored products from SQLite.")
 
-    for p in ps:
-        db.upsert_product(p.__dict__)
-    print("products:",len(ps))
+    stored_products=db.get_products()
+    if len(stored_products)<5:
+        print("No stored products available; cannot build opportunity report yet.")
+        return
+    print("stored products:",len(stored_products))
 
     print("[4/5] scoring + overseas price")
-    rows=report(db.get_products(),mc,spikes)
+    rows=report(stored_products,mc,spikes)
 
     print("[5/5] CSV")
     out=Path("data/opportunities.csv")
